@@ -1,4 +1,3 @@
-from concurrent.futures import process
 import gc
 import sys
 import numpy as np
@@ -34,6 +33,7 @@ def process_batch(batch, batch_nr):
 
         process = Process(target=values_to_df, args=(value, batch_nr, value_nr, child_conn))
         processes.append(process)
+        value_nr += 1
 
     for process in processes:
         process.start()
@@ -60,27 +60,35 @@ def lambda_handler(event, context):
     # Get number of parallel processes to run, default 25
     batch_size = event.get('batch', 25)
     nr_total = event.get('total', 150)
+    users = event.get('users', [12,13,14])
     
-    values = np.random.rand(nr_total)
-    
-    results = []
-    batch_nr = 0
-    for i in range(0, len(values), batch_size):
-        values_batch = values[i: i + batch_size]
-        sub_results = process_batch(values_batch, batch_nr)
-        results = results + sub_results
-        gc.collect()
-        batch_nr += 1
-    
+    for user in users:
 
-        if len(results)>0:
-            final_result = pd.concat(results, ignore_index=True)
-            print(f"Shape final result: {final_result.shape}")
-            print(final_result.groupby('batch')['value_nr'].agg(['size', 'min', 'max']).to_string())
+        values = np.random.rand(nr_total)
         
-        else:
-            final_result = None
-            print("No final result")
+        results = []
+        batch_nr = 0
+        for i in range(0, len(values), batch_size):
+            values_batch = values[i: i + batch_size]
+            sub_results = process_batch(values_batch, batch_nr)
+            results = results + sub_results
+            gc.collect()
+            batch_nr += 1
+        
 
-    return True
+            if len(results)>0:
+                final_result = pd.concat(results, ignore_index=True)
+                print(f"Shape final result ({user}): {final_result.shape}")
+                print(final_result['value_nr'].diff().unique())
+                final_result = final_result.groupby('batch')['value_nr'].agg(['size', 'min', 'max']).to_string()
+            
+            else:
+                final_result = None
+                print(f"No final result ({user})")
+
+    return final_result
+
+
+if __name__ == "__main__":
+    lambda_handler({}, None)
 
